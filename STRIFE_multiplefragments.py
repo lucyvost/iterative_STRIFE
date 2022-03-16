@@ -73,7 +73,7 @@ class STRIFE:
         #run 'python STRIFE.py -h' for definitions of the arguments
         
         print('Running STRIFE Algorithm....')
-       
+        
         
         print('Doing argument checking...')
         
@@ -159,7 +159,7 @@ class STRIFE:
         
         
         self.storeLoc = args.output_directory
-        embed()
+        
         if args.num_cpu_cores > 0:
             self.num_cpu_cores = args.num_cpu_cores
         elif args.num_cpu_cores == -1:
@@ -219,7 +219,7 @@ class STRIFE:
         
             
         fragMol3D = Chem.SDMolSupplier(args.fragment_sdf)[0]
-            
+        embed(header='222')
         fc, evI, evp, fc2 = self.preprocessing.preprocessFragment(fragSmiles, fragMol3D)
         
         #Save fragment SDF
@@ -305,7 +305,7 @@ class STRIFE:
         if args.model_type == 1:
             self.hotspotsInProtein = True
             #just need to change the distances in hotspotsDF so that they are one hydrogen bond's length shorter
-            embed()
+            
             for index in range(len(self.HotspotsDF)):
                 self.HotspotsDF['distFromExit'][index] = self.HotspotsDF['distFromExit'][index]-3
 
@@ -862,23 +862,33 @@ if __name__=='__main__':
             #help='Optional flag which will compute the distance of ligand pharmacophores to the nearest pharmacophoric point and save as a molecule property')
 
     arguments = parser.parse_args()
-    
-    #Define STRIFE model
-    STRIFE_model = STRIFE(arguments)
-    
-    #Set it running
-    STRIFE_model.run(arguments)
-    
-    #Pickle the STRIFE Class and SAVE
-    if arguments.name is None:
-        run_id = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
+    fragments = Chem.SDMolSupplier(arguments.fragment_sdf)
+    smiles = pd.read_csv(arguments.fragment_smiles, header=None)
+    embed()
+    for indx in range(len(fragments)):
+        smi = smiles[0][indx]
+        w = Chem.SDWriter('/home/vost/Work/STRIFE_update/STRIFE/temporary/frag.sdf')
+        w.write(fragments[indx])
+        w.close()
+        arguments.fragment_sdf = '/home/vost/Work/STRIFE_update/STRIFE/temporary/frag.sdf'
+        arguments.fragment_smiles = str(smi)
+    #embed()
+        #Define STRIFE model
+        STRIFE_model = STRIFE(arguments)
         
-        with open(f'{arguments.output_directory}/STRIFE_{run_id}.pickle', 'wb') as f:
-            pickle.dump(STRIFE_model, f)
-    else:
-        with open(f'{arguments.output_directory}/STRIFE_{arguments.name}.pickle', 'wb') as f:
-            pickle.dump(STRIFE_model, f)
-    
+        #Set it running
+        STRIFE_model.run(arguments)
+        
+        #Pickle the STRIFE Class and SAVE
+        if arguments.name is None:
+            run_id = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
+            
+            with open(f'{arguments.output_directory}/STRIFE_{run_id}.pickle', 'wb') as f:
+                pickle.dump(STRIFE_model, f)
+        else:
+            with open(f'{arguments.output_directory}/STRIFE_{arguments.name}.pickle', 'wb') as f:
+                pickle.dump(STRIFE_model, f)
+        
 
-    
-    
+        
+        

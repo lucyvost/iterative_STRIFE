@@ -13,7 +13,7 @@ import numpy as np
 import pandas as pd
 import sys
 from itertools import product
-
+from IPython import embed
 
 #rdkit imports
 from rdkit import Chem
@@ -166,7 +166,8 @@ class preprocessing:
         #Take a smiles (with a dummy atom denoting the exit vector) and do the processing required to make elaborations
         #1. Create a molecule of fragments with the 3d coordinates extracted from the sdfFile (which can be a molecule of the fragment or some larger ligand)
         #2. Align the fragment molecule to the molecule with the dummy atom, so that we can extract information about the exit vector and set up the constraint file for the docking
-        
+        embed(header = 'preprocess frag')
+
         molWithBondOrders = self.assignBondOrderTo3DMol(mol3D)
         
         
@@ -957,7 +958,21 @@ class preprocessing:
         cos_theta = np.dot(x,y)/(np.linalg.norm(x)*np.linalg.norm(y))
     
         return np.arccos(cos_theta)
+    def plausibilityScore(self, p1, p2, p3):
+        #basically check if a hotspot is at a crappy angle / behind fragment
+        #and is a reasonable distance away
+        #p1: hotspot, p2: exit vector, p3: atom before exit vector
+        
+        frag_vector = p2 - p3
+        exit_hotspot_vector = p1 - p2
+        theta = self.vectorAngle(frag_vector, exit_hotspot_vector)
+        dist = self.vectorDistance(p1, p2)
+        if theta > np.pi/2 and dist > 1.5:
+            score = 0
+        else:
+            score = 1
 
+        return(score)
     def filterCloseHotspots(self, df, distThreshold = 1.5):
         #Do filtering of hotspots based on their proximity to each other
         #Take the largest hotspot and add to list

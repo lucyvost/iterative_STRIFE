@@ -12,7 +12,6 @@ Main class for STRIFE algorithm
 
 #########Standard Libraries##########
 import json
-from this import d
 import time
 import argparse
 import os
@@ -79,7 +78,7 @@ class STRIFE:
         
         assert bool(args.protein) == 1, 'Please specify the path to a PDB file'
         assert bool(args.fragment_sdf) == 1, 'Please specify the location of the fragment SDF. This can also be an SDF of a larger ligand of which the fragment is a substructure'
-        assert bool(args.fragment_smiles) + bool(args.exit_vector_idx is not None) == 1, 'Please specify exactly one of: The location of a text file which contains the SMILES string of the fragment or a SMILES string (as the argument fragment_smiles) or the atomic index of the desired exit vector (as the argument exit_vector).'
+        assert bool(args.fragment_smiles) == 1, 'Please specify exactly one of: The location of a text file which contains the SMILES string of the fragment or a SMILES string (as the argument fragment_smiles) or the atomic index of the desired exit vector (as the argument exit_vector).'
         
         #Convert the provided paths to the absolute path 
         args.protein = os.path.abspath(os.path.expanduser(args.protein))
@@ -150,6 +149,7 @@ class STRIFE:
         
         
         #Check that we're inputting a valid pharmacophoric representation
+
         assert bool(args.hotspots_output) + bool(args.calculate_hotspots) + bool(args.load_specified_pharms) == 1, 'Please specify exactly one way for STRIFE to incorporate structural information. Either provide an already calculated FHM, request that STRIFE calculates an FHM, or provide your own pharmacophoric points'
         
 
@@ -157,9 +157,10 @@ class STRIFE:
         
         print('Processing pharmacophoric information')
         
-        
+       
         self.storeLoc = args.output_directory
-        embed()
+        
+
         if args.num_cpu_cores > 0:
             self.num_cpu_cores = args.num_cpu_cores
         elif args.num_cpu_cores == -1:
@@ -188,26 +189,27 @@ class STRIFE:
         
         
         if bool(args.load_specified_pharms):
-            self.hotspotsLoc = args.load_specified_pharms
+            self.hotspotStore = args.load_specified_pharms
+
             #Load the specified pharmacophoric points from args.output_directory
-            if len(glob.glob(f'{self.hotspotsLoc}/acceptorHotspot.sdf')) + len(glob.glob(f'{self.hotspotsLoc}/donorHotspot.sdf')) == 0:
+            if len(glob.glob(f'{self.hotspotStore}/acceptorHotspot.sdf')) + len(glob.glob(f'{self.hotspotStore}/donorHotspot.sdf')) == 0:
                 print('If manually specifying pharmacophoric points, please provide at least one point\n')
-                print(f'Donors should be saved in the file {self.hotspotsLoc}/donorHotspot.sdf\n')
-                print(f'Acceptors should be saved in the file {self.hotspotsLoc}/acceptorHotspot.sdf\n')
+                print(f'Donors should be saved in the file {self.hotspotStore}/donorHotspot.sdf\n')
+                print(f'Acceptors should be saved in the file {self.hotspotStore}/acceptorHotspot.sdf\n')
                 raise ValueError('If manually specifying pharmacophoric points, please provide at least one point')
                 
-            elif len(glob.glob(f'{self.hotspotsLoc}/acceptorHotspot.sdf')) == 0:
+            elif len(glob.glob(f'{self.hotspotStore}/acceptorHotspot.sdf')) == 0:
                 hotspotsDict = {}
                 hotspotsDict['Acceptor'] = Chem.RWMol()
-                hotspotsDict['Donor'] = Chem.MolFromMolFile(f'{self.hotspotsLoc}/donorHotspot.sdf')
-            elif len(glob.glob(f'{self.hotspotsLoc}/donorHotspot.sdf')) == 0:
+                hotspotsDict['Donor'] = Chem.SDMolSupplier(f'{self.hotspotStore}/donorHotspot.sdf')[0]
+            elif len(glob.glob(f'{self.hotspotStore}/donorHotspot.sdf')) == 0:
                 hotspotsDict = {}
-                hotspotsDict['Acceptor'] = Chem.MolFromMolFile(f'{self.hotspotsLoc}/acceptorHotspot.sdf')
+                hotspotsDict['Acceptor'] = Chem.SDMolSupplier(f'{self.hotspotStore}/acceptorHotspot.sdf')[0]
                 hotspotsDict['Donor'] = Chem.RWMol()
             else:
                 hotspotsDict = {}
-                hotspotsDict['Acceptor'] = Chem.MolFromMolFile(f'{self.hotspotsLoc}/acceptorHotspot.sdf')
-                hotspotsDict['Donor'] = Chem.MolFromMolFile(f'{self.hotspotsLoc}/donorHotspot.sdf')
+                hotspotsDict['Acceptor'] = Chem.SDMolSupplier(f'{self.hotspotStore}/acceptorHotspot.sdf')[0]
+                hotspotsDict['Donor'] = Chem.SDMolSupplier(f'{self.hotspotStore}/donorHotspot.sdf')[0]
         
         
         
@@ -241,7 +243,7 @@ class STRIFE:
         
         
         
-        if bool(args.load_specified_pharms) == False:
+        if args.load_specified_pharms == False:
             #i.e. we haven't already specified the pharmacophoric points
             
             #Read in hotspots output
@@ -270,27 +272,56 @@ class STRIFE:
         #Set up the hotspotsDF
         self.HPositions = [] #list for hotspot positions
         self.HType = [] #list for hotspot type (donor/acceptor)
-        self.Distances = [] #Distance from exit vector
-        self.Angles = [] #Angle from exit vector
+        #self.Distances = [] #Distance from exit vector
+        #self.Angles = [] #Angle from exit vector
         self.origAtomIdx = []
-
+        self.scoresList = []
+        self.Scores = []
         for pharm in ['Acceptor', 'Donor']:
 
             if hotspotsDict[pharm].GetNumHeavyAtoms() > 0: #Changed self.hotspotsDict to hotspotsDict here
+                self.scoresList.append(np.array((hotspotsDict[pharm].GetProp('vdw').split())))
                 for atom in hotspotsDict[pharm].GetAtoms():
                     pos = np.array(hotspotsDict[pharm].GetConformer().GetAtomPosition(atom.GetIdx()))
 
                     self.HPositions.append(pos)
-                    self.Distances.append(self.preprocessing.vectorDistance(pos, self.exitVectorPos))
-                    self.Angles.append(self.preprocessing.vectorAngle(pos, self.exitVectorPos))
+                    #self.Distances.append(self.preprocessing.vectorDistance(pos, self.exitVectorPos))
+                    #self.Angles.append(self.preprocessing.vectorAngle(pos, self.exitVectorPos))
                     self.HType.append(pharm)
                     self.origAtomIdx.append(atom.GetIdx()) #Atom index so we can recover it if necessary
 
-        self.HotspotsDF = pd.DataFrame({'distFromExit':self.Distances, 'angFromExit':self.Angles, 'position':self.HPositions, 'type':self.HType}).sort_values('distFromExit', ascending = True).reset_index(drop = True)
+        for sublist in self.scoresList:
+            for score in sublist:
+                self.Scores.append(float(score))
+        
+        self.HotspotsDF = pd.DataFrame({'position':self.HPositions, 'type':self.HType, 'score': self.Scores }).sort_values('score', ascending = False).reset_index(drop = True)
 
 
-        self.hSingles = self.preprocessing.prepareProfiles(self.HotspotsDF)
-        self.hMulti = self.preprocessing.prepareProfiles(self.HotspotsDF, single = False) #For satisfying multiple pharmacophoric point simultaneously
+        #rule out the least important hotspots that are within 4A of each other
+        self.Filtered=True
+        if self.Filtered:
+            self.FilteredDF = pd.DataFrame()
+            self.FilteredDF = self.FilteredDF.append(self.HotspotsDF.loc[self.HotspotsDF['score']== max(self.HotspotsDF['score'])])
+            for idx, row in self.HotspotsDF.iterrows():
+                add = 1
+                for idx2, row2 in self.FilteredDF.iterrows():
+                    if self.preprocessing.vectorDistance(row['position'], row2['position']) < 4:
+                        add = 0
+                if add == 1:
+                    self.FilteredDF = self.FilteredDF.append(row)
+
+            self.HotspotsDF = self.FilteredDF
+            self.HotspotsDF = self.HotspotsDF.reset_index(drop=True)
+        
+
+        #tell it to rule out hotspots below a certain score..
+        self.HotspotsDF = self.HotspotsDF[self.HotspotsDF['score'] > 0.01]
+        self.HotspotsDF = self.HotspotsDF.reset_index(drop=True)
+
+
+        #cant do this yet as dont have exit vector
+        #self.hSingles = self.preprocessing.prepareProfiles(self.HotspotsDF)
+        #self.hMulti = self.preprocessing.prepareProfiles(self.HotspotsDF, single = False) #For satisfying multiple pharmacophoric point simultaneously
 
         #Import pathLength classifier
         with open(args.path_length_model, 'rb') as f:
@@ -298,53 +329,75 @@ class STRIFE:
             
     
     def run(self, args):
-        
-        #Function which runs a version of the STRIFE algorithm depending on the specified model_type
-        if args.model_type == 0:
-            self.runWholePipeline(totalNumElabs = args.number_elaborations, numElabsPerPoint = args.number_elaborations_exploration)
-        if args.model_type == 1:
-            self.hotspotsInProtein = True
-            #just need to change the distances in hotspotsDF so that they are one hydrogen bond's length shorter
-            embed()
-            for index in range(len(self.HotspotsDF)):
-                self.HotspotsDF['distFromExit'][index] = self.HotspotsDF['distFromExit'][index]-3
-
-            #then sort in order of score and only keep top scorer
-            #self.HotspotsDF = self.HotspotsDF.sort_values('score', ascending=False).reset_index(drop=True)
-            #could also do a plausibility check here...
-
-            self.preprocessing.plausibilityScore()
-            self.HotspotsDF = self.HotspotsDF[self.HotspotsDF['score'] == np.max(self.HotspotsDF['score'])].reset_index(drop=True)
-
-            self.runWholePipeline(totalNumElabs = args.number_elaborations, numElabsPerPoint = args.number_elaborations_exploration, hotspotsInProtein = self.hotspotsInProtein)
-        elif args.model_type == 2:
-            self.runCustomPharms(numElabsRefinement = args.number_elaborations, numElabsExploration = args.number_elaborations_exploration)
-        elif args.model_type == 3:
+        self.hotspotsInProtein = True
+        #for index in range(len(self.HotspotsDF)):
+        for index in [0]:
+            self.chooseExitVector(self.fragCore, self.HotspotsDF, index)
             self.elaborationsWithoutRefinement(counts = True, totalNumElabs = args.number_elaborations, numElabsPerPoint = args.number_elaborations_exploration)
-        else:
-            print('Please specify a valid model setting')
     
-            
-    def runWholePipeline(self, totalNumElabs = 250, numElabsPerPoint = 250, hotspotsInProtein = False):
+    def chooseExitVector(self, fragment, hotspots, index):
+        embed(header = 'choose exit vector')
+        #eventually will have index be iterated over but not for now
+        #pick the top hotspot
+        #self.topHotspot = self.HotspotsDF[self.HotspotsDF['score'] == np.max(self.HotspotsDF['score'])]
+        self.topHotspot = pd.DataFrame(self.HotspotsDF.iloc[0])[0]
+        topHotspotCoords = self.topHotspot['position']
+
+        #iterate through the atoms comprising the fragment to find the best exit vector
+        fragConf = fragment.GetConformer()
+        fragAtomIndices = []
+        fragAtomPositions = []
+        fragAtomDistances = []
+        for atomIndex in range(fragment.GetNumHeavyAtoms()):
+            fragAtomPos = (np.array(fragConf.GetAtomPosition(atomIndex)))
+            fragAtomPositions.append(fragAtomPos)
+            fragAtomDistances.append(self.preprocessing.vectorDistance(fragAtomPos, topHotspotCoords))
+            fragAtomIndices.append(atomIndex)
+        self.DummyDF = pd.DataFrame({'position': fragAtomPositions, 'distance': fragAtomDistances, 'atom_index':fragAtomIndices}).sort_values('distance').reset_index(drop=True)
         
-        if self.HotspotsDF.shape[0] > 0:
-            self.exploration(numElabsPerPoint = numElabsPerPoint)
-            self.identifyQuasiActives()
+        #check that nearest atom is an appropriate selection to elaborate from
+        self.possExitVector = pd.DataFrame(self.DummyDF.iloc[0])[0]
+        self.possExitVectorIndex = int(self.possExitVector['atom_index'])
+        atoms = fragment.GetAtoms()
+        atom = atoms[self.possExitVectorIndex]
+
+        #check that the atom indexing is working probably
+
+        self.possExitVectorDegree = atom.GetDegree()
+        exit_hotspot_vector = self.topHotspot['position'] - self.possExitVector['position']
+        if self.possExitVectorDegree == 1:
+            #at the end of a chain, only need to check angle
+            #find out nearest neighbour's index
+            atom.GetNeighbors()[0].GetIdx()
+            self.possExitVectorNeighbor = np.array(fragConf.GetAtomPosition(atom.GetNeighbors()[0].GetIdx()))
+            self.possExitVectorPlausibility = self.preprocessing.plausibilityScore(topHotspotCoords, self.possExitVector['position'], self.possExitVectorNeighbor)
+             
+        elif self.possExitVectorDegree == 2:
+            #could be aromatic..
+            if atom.GetIsAromatic():
+                #fine but can't use atom as dummy - need to add a branch on to elaborate from
+                #check distance isn't too small
+                if self.possExitVector['distance'] < 3:
+                    self.possExitVectorPlausibility = 0
+                else:
+                    #neighbor1, neighbor2 = atom.GetNeighbors()
+                    editableFragment = Chem.EditableMol(fragment)
+
+                #add branch, then check angle as before
+                #nope, adding branch won't work because won't be able to find its coords
+                #instead  
+        elif self.possExitVectorDegree => 3:
+            self.possExitVectorPlausibility = 0
+
+
+        if self.possExitVectorPlausibility == 1:
+            #run using index to specify exit vector
+            return self.possExitVectorIndex
             
-            numQuasiActives = sum([self.singleQuasiActives[k].shape[0] for k in self.singleQuasiActives.keys()])
-            if numQuasiActives > 0:
-                self.refinement(totalNumElabs)
-                self.status = 'No Issues'
-            else:
-                self.status = 'No quasi-actives identified'
-        else: 
-            self.status = 'No suitable hotspots identified'
+        else:
 
 
-    def manuallySpecifyPharmPoints(self):
-        #TODO - Implement
-        pass
-    
+
     def exploration(self, numElabsPerPoint = 250, n_cores = None):
         
         #Generate elaborations using the count model
@@ -838,8 +891,7 @@ if __name__=='__main__':
 
     parser.add_argument('--load_specified_pharms', '-m', type = str, default = None,
                         help = 'Use pharmacophores that have been manually specfied instead of ones derived from FHMs. If True, the output_directory should contain at least one of donorHotspot.sdf or acceptorHotspot.sdf')    
-    parser.add_argument('--loc_hotspots', type = str, default = None,
-                        help = 'Location of file containing hotspots (manually specified)')
+
     parser.add_argument('--path_length_model', type = str, default = 'models/pathLengthPred_saved.pickle', 
                         help = 'Location of saved SVM for predicting path distances')
     

@@ -156,10 +156,10 @@ class STRIFE:
         print('Argument checking complete.')
         
         print('Processing pharmacophoric information')
-        
+        print(args.num_cpu_cores)
         
         self.storeLoc = args.output_directory
-        embed()
+        
         if args.num_cpu_cores > 0:
             self.num_cpu_cores = args.num_cpu_cores
         elif args.num_cpu_cores == -1:
