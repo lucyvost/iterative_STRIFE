@@ -166,11 +166,10 @@ class preprocessing:
         #Take a smiles (with a dummy atom denoting the exit vector) and do the processing required to make elaborations
         #1. Create a molecule of fragments with the 3d coordinates extracted from the sdfFile (which can be a molecule of the fragment or some larger ligand)
         #2. Align the fragment molecule to the molecule with the dummy atom, so that we can extract information about the exit vector and set up the constraint file for the docking
-        embed(header = 'preprocess frag')
+        
 
         molWithBondOrders = self.assignBondOrderTo3DMol(mol3D)
-        
-        
+
         fragMol = Chem.MolFromSmiles(fragSmiles)
         
         if molWithBondOrders.GetNumHeavyAtoms() > fragMol.GetNumHeavyAtoms():
@@ -352,6 +351,7 @@ class preprocessing:
 
     def align_smiles_by_frags(self, smiles_mol, smiles_frag):
         #Amended function which takes a single fragment as input
+        #embed()
         try:
             smiles_frags = smiles_frag + '.[*:2]'
             mols_to_align = [Chem.MolFromSmiles(smiles_mol), Chem.MolFromSmiles(smiles_frags)]
@@ -485,11 +485,12 @@ class preprocessing:
         #RDKit is behaving strangely - it's loading the pdbbind molecules in without bond orders
         #but still retains that information somehow 
         #This function takes in the molecule and returns the 3D molecule with the correct bond orders
-        
+        m = Chem.RemoveHs(m)
         m2 = Chem.MolFromSmiles(Chem.MolToSmiles(m))
         
         if m.HasSubstructMatch(m2):
             #Renumber indices
+
             m_renum = Chem.RenumberAtoms(m, m.GetSubstructMatch(m2))
             conf = Chem.Conformer(m.GetNumHeavyAtoms())
             
@@ -628,7 +629,7 @@ class preprocessing:
     ####Hotspots Processing####
     
     
-    def processHotspots(self, results, exitVecPos, fragMol, sizeCutOff = 8, minDistance = 1.5, maxDistance = 5, DAthreshold = 10, ApolarThreshold = 1, verbose = False):
+    def processHotspots(self, results, exitVecPos, fragMol, sizeCutOff = 8, minDistance = 0, maxDistance = 18, DAthreshold = 10, ApolarThreshold = 1, verbose = False):
         
         #Get density grids
         aboveThresholdDictDonor = results.super_grids['donor'].grid_value_by_coordinates(threshold = DAthreshold)
@@ -667,7 +668,7 @@ class preprocessing:
             return donorOut, acceptorOut
         
     
-    def createDAMols(self, grid, apolarGrid, exitVecPos, fragMol, sizeCutOff = 8, donor = True, minDistance = 1, maxDistance = 5, verbose = False):
+    def createDAMols(self, grid, apolarGrid, exitVecPos, fragMol, sizeCutOff = 8, donor = True, minDistance = 0, maxDistance = 18, verbose = False):
         #Takes a Donor or Acceptor grid and returns an rdkit molecule, where each atom represents a density cluster
         
         #Grid - a grid obtained in processHotspots
@@ -681,7 +682,7 @@ class preprocessing:
         x = []
         y = []
         z = []
-    
+        
         for k in list(grid.keys()):
             x.append(grid[k][0][0])
             y.append(grid[k][0][1])
@@ -702,8 +703,8 @@ class preprocessing:
             intermediate1 = within_N_Angstroms #Density after thresholding for distance
         
         #Only keep density such that the fragment atom which is closest to the voxel is the exit point
-        within_N_Angstroms = self.compareEVToOtherAtoms(within_N_Angstroms, exitVecPos, fragMol)
-        within_N_Angstroms = within_N_Angstroms.loc[within_N_Angstroms['closestToEV']]
+        #within_N_Angstroms = self.compareEVToOtherAtoms(within_N_Angstroms, exitVecPos, fragMol)
+        #within_N_Angstroms = within_N_Angstroms.loc[within_N_Angstroms['closestToEV']]
         
     
         if verbose:
@@ -731,7 +732,7 @@ class preprocessing:
         #We don't want lots of small hotspots in the same regions as this will massively increase computational time for little benefit
     
         #If centroidDF is empty then just return an empty mol
-        
+        #embed(header='735, prepr')
         if centroidDF.shape[0] == 0:
             
             if not verbose:
@@ -739,7 +740,8 @@ class preprocessing:
             else: 
                 return Chem.RWMol(), intermediate1, intermediate2, intermediate3
     
-    
+        
+
         elif centroidDF.shape[0] > 0:
             #Otherwise filter further
             centroidDF = self.filterCloseHotspots(centroidDF)
@@ -763,13 +765,14 @@ class preprocessing:
                 else:
                     outMol = self.hotspotsDFToMol(centroidDF, cutoff = sizeCutOff, atomType='P') #Phosphorus atoms represent acceptor density 
                 
-                
+                embed()
                 if not verbose:
                     return outMol
                 else:
                     return outMol, intermediate1, intermediate2, intermediate3, intermediate4, intermediate5
     
             elif centroidDF.loc[centroidDF['size'] > np.floor(sizeCutOff/2)].shape[0] > 0: #Check whether there are smaller hotspot regions if no larger ones
+                
                 #Only keep centroids which are close to a piece of apolar density (otherwise deemed not to be a promising target)
                 centroidDF = self.compareCentroidToApolar(centroidDF, apolarGrid)
                 centroidDF = centroidDF.loc[centroidDF['apolarProximity'] < 1] 
@@ -781,7 +784,7 @@ class preprocessing:
                     outMol = self.hotspotsDFToMol(centroidDF, cutoff = np.floor(sizeCutOff/2), atomType='I') #Iodine atoms represent donor density (arbitrary choice)
                 else:
                     outMol = self.hotspotsDFToMol(centroidDF, cutoff = np.floor(sizeCutOff/2), atomType='P') #Phosphorus atoms represent acceptor density 
-                
+                embed()
                 if not verbose:
                     return outMol
                 else:
@@ -811,7 +814,8 @@ class preprocessing:
                     return Chem.RWMol() # Just return an empty molecule
                 else:
                     return Chem.RWMol(), intermediate1, intermediate2, intermediate3, intermediate4
-                    
+
+                
 
 
 
@@ -958,6 +962,7 @@ class preprocessing:
         cos_theta = np.dot(x,y)/(np.linalg.norm(x)*np.linalg.norm(y))
     
         return np.arccos(cos_theta)
+
     def plausibilityScore(self, p1, p2, p3):
         #basically check if a hotspot is at a crappy angle / behind fragment
         #and is a reasonable distance away
@@ -967,12 +972,13 @@ class preprocessing:
         exit_hotspot_vector = p1 - p2
         theta = self.vectorAngle(frag_vector, exit_hotspot_vector)
         dist = self.vectorDistance(p1, p2)
-        if theta > np.pi/2 and dist > 1.5:
+        if theta > np.pi/2:
             score = 0
+            
         else:
             score = 1
-
         return(score)
+
     def filterCloseHotspots(self, df, distThreshold = 1.5):
         #Do filtering of hotspots based on their proximity to each other
         #Take the largest hotspot and add to list

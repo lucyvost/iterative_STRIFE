@@ -13,6 +13,7 @@ Class for docking elaborations using GOLD and doing operations with docked struc
 #import elabHotspotsCCDC
 
 #########Standard Libraries##########
+from dis import dis
 import json
 import numpy as np
 from numpy import linalg
@@ -64,7 +65,7 @@ from time import time
 from dataclasses import dataclass, field
 from multiprocessing import Pool
 
-
+from IPython import embed
 #Create feature factory
 fdefName = os.path.join(RDConfig.RDDataDir,'BaseFeatures.fdef')
 factory = ChemicalFeatures.BuildFeatureFactory(fdefName)
@@ -97,10 +98,22 @@ class docking:
         for m in mols:
             smiles.append(Chem.MolToSmiles(m))
             dist.append(self.assessSingleDock(m, hotspot, single))
-        
-        distanceDF = pd.DataFrame({'smiles':smiles, 'distance':dist}).sort_values('distance', ascending = True)
+        #added the mols here
+        distanceDF = pd.DataFrame({'smiles':smiles,'mols':mols, 'distance':dist}).sort_values('distance', ascending = True)
         return distanceDF
-    
+
+    def assessAllDocksNoRefinement(self, mols, hotspot, single = True):
+        smiles = []
+        dist = []
+       
+        for m in mols:
+            smiles.append(Chem.MolToSmiles(m))
+            
+            dist.append(self.NEWassessSingleDock(m, hotspot, single))
+
+        
+        distanceDF = pd.DataFrame({'smiles':smiles, 'mols': mols,'distance':dist}).sort_values('distance', ascending = True)
+        return distanceDF    
     
     
     def assessSingleDock(self, mol, hotspot, single = True):
@@ -138,10 +151,67 @@ class docking:
                     distances.append(100) #Append really big distance
                 elif len(distanceToPharm) > 0:
                     distances.append(min(distanceToPharm))
-
+            print(distances)
             return max(distances) #Return the maximum of the distances to the hotspot centres
 
+    def NEWassessSingleDock(self, mol, hotspot, single = True):
+        #Compute the distance between the pharmacophores in a mol and the corresponding hotspot
+        
 
+        if single == True:
+            #i.e. we're comparing to a single hotspot
+            #Check how close the pharmacophores in the docked molecule are to the hotspot of interest
+            distanceToPharm = []
+            feats = factory.GetFeaturesForMol(mol)
+            for feat in feats:
+                if feat.GetFamily() == hotspot['type']:
+                    #Compute Distance to the  hotspot and take the pharmacophore with the smallest distance
+                    pharmPosition = np.array(mol.GetConformer().GetAtomPosition(feat.GetAtomIds()[0]))
+                    distanceToPharm.append(self.vectorDistance(pharmPosition, hotspot['position']))
+            if len(distanceToPharm) == 0:
+                return 100
+            else:
+                return min(distanceToPharm)
+
+
+        else:
+            #i.e. we're assessing closeness to multiple hotspots
+            
+            distances = []
+            feats = list(factory.GetFeaturesForMol(mol))
+            test_dict = {}
+            for k in hotspot.keys():
+                pharmPoint = hotspot[k]
+                distanceToPharm = []
+                test_dict = {}
+                for feat in feats:
+                    if feat.GetFamily() == pharmPoint['type']:
+                        #Compute Distance to the hotspot and take the pharmacophore with the smallest distance
+                        pharmPosition = np.array(mol.GetConformer().GetAtomPosition(feat.GetAtomIds()[0]))
+                        distanceToPharm.append(self.vectorDistance(pharmPosition, pharmPoint['position']))
+                        
+                if len(distanceToPharm) == 0:
+                    #i.e. no matching pharmacophores
+                    distances.append(100) #Append really big distance
+                elif len(distanceToPharm) > 0:
+                    for distance in distanceToPharm:
+                        if distance <= 3.5:
+                            test_dict[feats[distanceToPharm.index(distance)]] = distance
+                    if len(test_dict) == 0:
+                        #none close enough 
+                        distances.append(100)
+
+
+                    elif len(test_dict) == 1:
+                        feats.remove(list(test_dict.keys())[0])
+                        distances.append(min(distanceToPharm))
+                    
+                    elif len(test_dict) > 1:
+                        #sticky situation: two pharms satisfying hotspot
+                        distances.append(min(distanceToPharm))
+
+            print(distances)
+            return max(distances)
             '''
             distances = []
             for i in [1,2]:
@@ -220,20 +290,7 @@ class docking:
         settings.output_file = outputFile
 
 
-        '''
-        #Define protein, binding site, scaffold and ligands to dock
-        protein = settings.proteins[0]
-        crystal_ligand = MoleculeReader(cavityLigandFile)[0]
-        crystal_ligand.identifier = 'crystalLigand' #Change the identifier of the cavity ligand
-        settings.binding_site = settings.BindingSiteFromLigand(protein, crystal_ligand, 10.0) #Define the binding site
-
-        ligandsToDock = MoleculeReader(ligandsToDockSDF)
-        settings.add_ligand_file(ligandsToDockSDF, 10) #Generate 10 poses per 
-
-        #Set scaffold constraint:
-        scaffold =  MoleculeReader(constraintFile)[0]
-        settings.add_constraint(settings.ScaffoldMatchConstraint(scaffold))
-        '''
+       
 
         #Dock the ligands
         results = docker.dock()
@@ -384,11 +441,18 @@ class docking:
         
         # All done.
         print(f"Finished in {time() - t0:.1f} seconds.")
-        
+        try:
+            shutils.rmtree(batch_tempd)
+        except:
+            print('temp file')
         if returnFitnessScore:
             scores = [float(EntryReader(fn)[0].attributes['Gold.PLP.Fitness']) for fn in topRanked] #Get PLP scores for each of the top-ranked docks
+            rmtree(output_dir)
+
             return mols, scores
         else:
+            rmtree(output_dir)
+
             return mols
 
 
@@ -496,7 +560,7 @@ class chunkForMP:
 
 
 def do_chunk(chunk):
-    
+    print('docking.py file')
     """
     Dock a chunk of the input file.
 
