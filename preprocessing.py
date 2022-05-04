@@ -765,7 +765,7 @@ class preprocessing:
                 else:
                     outMol = self.hotspotsDFToMol(centroidDF, cutoff = sizeCutOff, atomType='P') #Phosphorus atoms represent acceptor density 
                 
-                embed()
+                
                 if not verbose:
                     return outMol
                 else:
@@ -972,7 +972,7 @@ class preprocessing:
         exit_hotspot_vector = p1 - p2
         theta = self.vectorAngle(frag_vector, exit_hotspot_vector)
         dist = self.vectorDistance(p1, p2)
-        if theta > np.pi/2:
+        if theta > np.pi/2 or dist > 10:
             score = 0
             
         else:

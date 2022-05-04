@@ -339,7 +339,7 @@ class STRIFE:
                 except:
                     self.avoid.append(index2)
             #return the index of the exit vector, also define self.topHotspot
-            if args.iter_type == 'score' or args.iter_type == 'otw':
+            if args.iter_type == 'score' or args.iter_type == 'otw' or args.iter_type == 'otw_single':
                 self.exitVectorIndex = self.chooseExitVector(self.fragMol3D, self.HotspotsDF, index, self.avoid)
             elif args.iter_type == 'distance':
                 self.exitVectorIndex = self.chooseExitVectorDistance(self.fragMol3D, self.HotspotsDF, index, self.avoid)   
@@ -378,7 +378,7 @@ class STRIFE:
                 f.write(fragSmiles)
             fc, evI, evp, fc2 = self.preprocessing.preprocessFragment(fragSmiles, self.fragMol3D)
 
-            if args.iter_type == 'otw':
+            if args.iter_type == 'otw' or args.iter_type == 'otw_single':
                 #got exit vector position, evp
                 #find exit vector - top hotspot
                 hotspots_to_satisfy = []
@@ -398,9 +398,9 @@ class STRIFE:
                         exit_secondary = secondary_hotspot - evp
                         print(exit_secondary)
                         angle = (self.preprocessing.vectorAngle(exit_secondary,exit_tophotspot))
-                        if angle < np.pi/5 : #possibly should be pi/6
+                        if angle < np.pi/4 : #possibly should be pi/6
                             
-                            if self.preprocessing.plausibilityScore(secondary_hotspot, self.possExitVector['position'],self.possExitVectorNeighbor) != 1:
+                            if self.preprocessing.plausibilityScore(secondary_hotspot, self.possExitVectorPos,self.possExitVectorNeighbor) != 1:
                                 continue
                             else:
                                 self.tempTopHotspot = self.tempTopHotspot.append(self.HotspotsDF.loc[idx,:])
@@ -444,39 +444,166 @@ class STRIFE:
             #Set up the hotspotsDF
             
             if len(self.topHotspot) > 1:
+            #ie using one of the on the way methods
+                if args.iter_type == 'otw':
+                    #for index in range(len(self.topHotspot)/3):
+                    dists = []
+                    angs = []
+                    for indx in self.topHotspot.index.to_list():
+                    
+                        dists.append(self.preprocessing.vectorDistance(self.topHotspot['position'][indx],self.exitVectorPos) -3)
+                        angs.append(self.preprocessing.vectorAngle(self.topHotspot['position'][indx],self.exitVectorPos))
 
-                #for index in range(len(self.topHotspot)/3):
-                dists = []
-                angs = []
-                for indx in self.topHotspot.index.to_list():
-                   
-                    dists.append(self.preprocessing.vectorDistance(self.topHotspot['position'][indx],self.exitVectorPos) -3)
-                    angs.append(self.preprocessing.vectorAngle(self.topHotspot['position'][indx],self.exitVectorPos))
+                    self.finalTopHotspot = pd.DataFrame({'distFromExit':dists, 'angFromExit':angs, 'position':list(self.topHotspot['position']), 'type':list(self.topHotspot['type']), index: self.topHotspot.index.to_list()})
+                    self.hMulti = self.preprocessing.prepareProfiles(self.finalTopHotspot, single = False)
 
-                self.finalTopHotspot = pd.DataFrame({'distFromExit':dists, 'angFromExit':angs, 'position':list(self.topHotspot['position']), 'type':list(self.topHotspot['type']), index: self.topHotspot.index.to_list()})
-                self.hMulti = self.preprocessing.prepareProfiles(self.finalTopHotspot, single = False)
+                    #do the actual thing
+                    self.finishedElabs, self.HotspotsDF_updated = self.elaborationsWithoutRefinement(counts = True, totalNumElabs = args.number_elaborations, numElabsPerPoint = args.number_elaborations_exploration, index=index, single=False)
 
-                #do the actual thing
-                self.finishedElabs, self.HotspotsDF_updated = self.elaborationsWithoutRefinement(counts = True, totalNumElabs = args.number_elaborations, numElabsPerPoint = args.number_elaborations_exploration, index=index, single=False)
+                    #check it returned something
+                    if [self.finishedElabs, self.HotspotsDF_updated] == [0,0]:
+                        #embed(header = '418, didnt find any quasi actives')
+                        #then the elaboration process didn't work, skip the hotspot
+                        #self.HotspotsDF = self.HotspotsDF.drop(self.topHotspot.index).reset_index(drop=True)
+                        self.HotspotsDF = self.HotspotsDF.drop(self.topHotspot.index)
 
-                #check it returned something
-                if [self.finishedElabs, self.HotspotsDF_updated] == [0,0]:
-                    #embed(header = '418, didnt find any quasi actives')
-                    #then the elaboration process didn't work, skip the hotspot
-                    #self.HotspotsDF = self.HotspotsDF.drop(self.topHotspot.index).reset_index(drop=True)
-                    self.HotspotsDF = self.HotspotsDF.drop(self.topHotspot.index)
+                        self.fragMol3D_updated = self.fragMol3D
+                        self.HotspotsDF_updated = self.HotspotsDF
+                        #embed(header='414')
+                        continue     
+                    else:           
+                        self.fragMol3D_updated = self.finishedElabs[0]
+                        self.QuasiActives = self.finishedElabs
 
-                    self.fragMol3D_updated = self.fragMol3D
-                    self.HotspotsDF_updated = self.HotspotsDF
-                    #embed(header='414')
-                    continue     
-                else:           
-                    self.fragMol3D_updated = self.finishedElabs[0]
-                    self.QuasiActives = self.finishedElabs
+                elif args.iter_type == 'otw_single':
+                    #for index in range(len(self.topHotspot)/3):
+                    dists = []
+                    angs = []
+                    for indx in self.topHotspot.index.to_list():
+                    
+                        dists.append(self.preprocessing.vectorDistance(self.topHotspot['position'][indx],self.exitVectorPos) -3)
+                        angs.append(self.preprocessing.vectorAngle(self.topHotspot['position'][indx],self.exitVectorPos))
+                    self.origTopHotspot = self.topHotspot
+                    self.finalTopHotspot = pd.DataFrame({'distFromExit':dists, 'angFromExit':angs, 'position':list(self.topHotspot['position']), 'type':list(self.topHotspot['type'])}, index= self.topHotspot.index.to_list())
+                    self.hSingles = self.preprocessing.prepareProfiles(self.finalTopHotspot, single = True)
+                    
+                    #do the actual thing
+                    self.origSingles = self.hSingles
+                    counter = 0
+                    for key in self.origSingles:
+
+                        #embed(header='495')
+                        print(key)
+                        
+                        self.topHotspot = pd.DataFrame(self.origTopHotspot.loc[int(key),:]).T
+                        print('top hotspot is now..')
+                        print(self.topHotspot)
+                        self.hSingles = self.origSingles[key]
+                        print(self.hSingles)
+
+                        if counter > 0:
+                            print('choosing exit vector')
+                            #embed(header='505')
+                            #check SA score of adding to each atom in the fragment
+                            self.avoid=[]
+                            self.orig_score = sascorer.calculateScore(self.fragMol3D)
+                            #first calculate the SA of the fragment
+                            
+
+                            #then compare this to the SA of the fragment with a benzene ring added on to it at each atom
+                            
+                            benz = Chem.MolFromSmiles('Cc1ccccc1')
+                            mol_rw = Chem.RWMol(Chem.CombineMols(benz, self.fragMol3D))
+
+                            for atom in self.fragMol3D.GetAtoms():
+                                index2 = atom.GetIdx()
+                                mol_rw = Chem.RWMol(Chem.CombineMols(benz, self.fragMol3D))
+                                mol_rw.AddBond(0, 7+index2, order = Chem.rdchem.BondType.SINGLE )
+                            
+                                #try:
+                                done_mol = mol_rw.GetMol()
+                                try:
+                                    Chem.SanitizeMol(done_mol)
+                                    
+                                    if sascorer.calculateScore(done_mol) > 1.5*self.orig_score:
+                                        print(sascorer.calculateScore(done_mol))
+                                        self.avoid.append(index2)
+                                except:
+                                    self.avoid.append(index2)
+                            #return the index of the exit vector, also define self.topHotspot
+                            
+                            self.exitVectorIndex = self.chooseExitVectorOTW(self.fragMol3D, self.topHotspot, index, self.avoid)
+                            molWithDummyAtom = addDummyAtomToMol(self.fragMol3D, self.exitVectorIndex)
+                            fragSmiles = Chem.MolToSmiles(molWithDummyAtom)
+
+                            #not touching this
+                            print('Preprocessing fragment')
+                            #Store fragment SMILES in the output directory:
+                            with open(f'{self.storeLoc}/frag_smiles{index}.smi', 'w') as f:
+                                f.write(fragSmiles)
+
+                            with open(f'{self.storeLoc}/frag_smiles.smi', 'w') as f:
+                                f.write(fragSmiles)
+                            fc, evI, evp, fc2 = self.preprocessing.preprocessFragment(fragSmiles, self.fragMol3D)
+
+                            Chem.MolToMolFile(fc, f'{self.storeLoc}/frag_{index}_{int(key)}.sdf')
+                            #Save fragment SDF
+                            Chem.MolToMolFile(fc, f'{self.storeLoc}/frag.sdf')
+                            #Save constraint SDF (will need to be converted to Mol2 using obabel)
+                            Chem.MolToMolFile(fc2, f'{self.storeLoc}/constraint.sdf')
+
+                            #Save fragment exit position
+                            np.savetxt(f'{self.storeLoc}/evp.txt', evp)
+                            #Convert the constraint.sdf file to constraint.mol2 (for constrained docking in GOLD)
+                            obConversion = openbabel.OBConversion()
+                            obConversion.SetInAndOutFormats("sdf", "mol2")
+                            mol = openbabel.OBMol()
+                            obConversion.ReadFile(mol, f'{self.storeLoc}/constraint.sdf')
+                            obConversion.WriteFile(mol, f'{self.storeLoc}/constraint{index}.mol2')
+                            
 
 
 
 
+                            
+                            self.exitVectorPos = evp
+                            self.frag = f'{self.storeLoc}/frag_smiles.smi'
+                            self.fragCore = fc
+                            self.constraintFile = f'{self.storeLoc}/constraint{index}.mol2'
+                            self.cavityLigandFile = args.fragment_sdf #Used for docking in GOLD to define the binding pocket
+                            self.protein = args.protein
+                        #embed(header='574')
+                        self.finishedElabs, self.HotspotsDF_updated = self.elaborationsWithoutRefinement(counts = True, totalNumElabs = args.number_elaborations, numElabsPerPoint = args.number_elaborations_exploration, index=index, single=True)
+                        print(self.finishedElabs)
+                        print(self.HotspotsDF_updated)
+                        
+
+                        #embed(header='580')
+                        #check it returned something
+                        if [self.finishedElabs, self.HotspotsDF_updated] == [0,0]:
+                            #embed(header = '418, didnt find any quasi actives')
+                            #then the elaboration process didn't work, skip the hotspot
+                            #self.HotspotsDF = self.HotspotsDF.drop(self.topHotspot.index).reset_index(drop=True)
+                            self.HotspotsDF = self.HotspotsDF.drop(self.topHotspot.index)
+                            #embed(header='585')
+                            self.fragMol3D_updated = self.fragMol3D
+                            self.HotspotsDF_updated = self.HotspotsDF
+                           
+                            continue   
+
+                        else:           
+                            self.fragMol3D_updated = self.finishedElabs[0]
+                            self.QuasiActives = self.finishedElabs
+
+                        self.fragMol3D = self.fragMol3D_updated
+                        self.HotspotsDF = self.HotspotsDF_updated
+
+                        #embed(header='600')
+                        counter = counter +1
+
+
+
+                        
             else:
                 
                 self.finalTopHotspot = pd.DataFrame({'distFromExit':self.preprocessing.vectorDistance(list(self.topHotspot['position'])[0],self.exitVectorPos), 'angFromExit':self.preprocessing.vectorAngle(list(self.topHotspot['position']),self.exitVectorPos), 'position':list(self.topHotspot['position']), 'type': list(self.topHotspot['type'])[0]}, index = [0])
@@ -488,7 +615,7 @@ class STRIFE:
                 if [self.finishedElabs, self.HotspotsDF_updated] == [0,0]:
                     #then the elaboration process didn't work, skip the hotspot
                     #self.HotspotsDF = self.HotspotsDF.drop(self.topHotspot.index).reset_index(drop=True)
-                    #embed()
+                   
                     if len(self.HotspotsDF) > 0:
                         self.HotspotsDF = self.HotspotsDF.drop(self.topHotspot.index)
                         self.fragMol3D_updated = self.fragMol3D
@@ -512,7 +639,7 @@ class STRIFE:
        
         while self.found_exit_vector == False and len(self.HotspotsDF) > 0:
             #top hotspot should be at the top of the list
-           
+            
             self.topHotspot = self.HotspotsDF.head(1)
             
             topHotspotCoords = list(self.topHotspot['position'])[0]
@@ -533,35 +660,36 @@ class STRIFE:
             
             if len(avoid) != 0:
                 for n in avoid:
-                    self.DummyDF = self.DummyDF.drop(self.DummyDF[self.DummyDF['atom_index'] == n].index).reset_index(drop=True)
+                    self.DummyDF = self.DummyDF.drop(self.DummyDF[self.DummyDF['atom_index'] == n].index)
             #check that nearest atom is an appropriate selection to elaborate from
-            self.possExitVector = pd.DataFrame(self.DummyDF.iloc[0])[0]
+            
+            self.possExitVector = pd.DataFrame(self.DummyDF.iloc[0]).T
             self.possExitVectorIndex = int(self.possExitVector['atom_index'])
             atoms = fragment.GetAtoms()
             atom = atoms[self.possExitVectorIndex]
 
             #check that the atom indexing is working probably
-
+            self.possExitVectorPos = list(self.possExitVector['position'])[0]
             self.possExitVectorDegree = atom.GetDegree()
-
+            
             if self.possExitVectorDegree == 1:
                 #at the end of a chain, only need to check angle
                 #find out nearest neighbour's index
                 atom.GetNeighbors()[0].GetIdx()
                 self.possExitVectorNeighbor = np.array(fragConf.GetAtomPosition(atom.GetNeighbors()[0].GetIdx()))
-                self.possExitVectorPlausibility = self.preprocessing.plausibilityScore(topHotspotCoords, self.possExitVector['position'],self.possExitVectorNeighbor)
+                self.possExitVectorPlausibility = self.preprocessing.plausibilityScore(topHotspotCoords, self.possExitVectorPos,self.possExitVectorNeighbor)
   
             elif self.possExitVectorDegree == 2:
                 #could be aromatic..
                 n1, n2 = atom.GetNeighbors()
                 self.possExitVectorNeighbor = (np.array(fragConf.GetAtomPosition(n1.GetIdx())) + np.array(fragConf.GetAtomPosition(n2.GetIdx())))/2
-                self.possExitVectorPlausibility = self.preprocessing.plausibilityScore(topHotspotCoords, self.possExitVector['position'],self.possExitVectorNeighbor)
+                self.possExitVectorPlausibility = self.preprocessing.plausibilityScore(topHotspotCoords, self.possExitVectorPos,self.possExitVectorNeighbor)
 
             elif self.possExitVectorDegree == 3:
                 #could be aromatic..
                 n1, n2, n3 = atom.GetNeighbors()
                 self.possExitVectorNeighbor = (np.array(fragConf.GetAtomPosition(n1.GetIdx())) + np.array(fragConf.GetAtomPosition(n2.GetIdx())) +np.array(fragConf.GetAtomPosition(n3.GetIdx())))/3
-                self.possExitVectorPlausibility = self.preprocessing.plausibilityScore(topHotspotCoords, self.possExitVector['position'],self.possExitVectorNeighbor)
+                self.possExitVectorPlausibility = self.preprocessing.plausibilityScore(topHotspotCoords, self.possExitVectorPos,self.possExitVectorNeighbor)
 
 
             elif self.possExitVectorDegree >= 3:
@@ -600,11 +728,11 @@ class STRIFE:
                     
                     distance_hotspot_atom = self.preprocessing.vectorDistance(fragAtomPos,hotspot_position)
                     self.distancesDF[indx][atomIndex]= distance_hotspot_atom
-            avoid = [1]
+            
             if len(avoid) != 0:
                 for n in avoid:
                     
-                    self.distancesDF = self.distancesDF.drop(n).reset_index(drop=True)
+                    self.distancesDF = self.distancesDF.drop(n)
             
             #now find minimum distance in dataframe
             #trickier than it should be?
@@ -665,6 +793,87 @@ class STRIFE:
                 #self.HotspotsDF = self.HotspotsDF.drop(self.topHotspot.index).reset_index(drop=True)
                 self.HotspotsDF = self.HotspotsDF.drop(self.topHotspot.index)
 
+        return self.possExitVectorIndex 
+
+
+    def chooseExitVectorOTW(self, fragment, hotspots, index, avoid = None):
+        
+        self.found_exit_vector = False
+    
+        #need to calculate distances between all of the hotspots and all of the atoms in frag
+        fragConf = fragment.GetConformer()
+        self.distancesDF = pd.DataFrame(index =[atom.GetIdx() for atom in list(fragment.GetAtoms())], columns=hotspots.index.tolist())
+        
+
+        for indx in hotspots.index.tolist():
+            hotspot_position = hotspots['position'][indx]
+            for atomIndex in [atom.GetIdx() for atom in list(fragment.GetAtoms())]:
+                fragAtomPos = (np.array(fragConf.GetAtomPosition(atomIndex)))
+                
+                distance_hotspot_atom = self.preprocessing.vectorDistance(fragAtomPos,hotspot_position)
+                self.distancesDF[indx][atomIndex]= distance_hotspot_atom
+        
+        if len(avoid) != 0:
+            for n in avoid:
+                
+                self.distancesDF = self.distancesDF.drop(n)
+        
+        #now find minimum distance in dataframe
+        #trickier than it should be?
+        dict1 = {}
+        for index in self.distancesDF.columns.tolist():
+            dict1[self.distancesDF.min(axis=0)[index]] = index
+
+        dict2 = {}
+        for column in self.distancesDF.index.tolist():
+            dict2[self.distancesDF.min(axis=1)[column]] = column
+
+        min_distance = np.min(list(dict1.keys()))
+        indx_best_hotspot = dict1[min_distance]
+        indx_best_fragatom = dict2[min_distance]
+        
+        
+
+
+        topHotspotCoords = list(self.topHotspot['position'])[0]
+
+        #check that nearest atom is an appropriate selection to elaborate from
+
+        self.possExitVectorIndex = indx_best_fragatom
+        self.possExitVectorPosition = np.array(fragConf.GetAtomPosition(self.possExitVectorIndex))
+        atoms = fragment.GetAtoms()
+        atom = atoms[self.possExitVectorIndex]
+
+        #check that the atom indexing is working probably
+
+        self.possExitVectorDegree = atom.GetDegree()
+
+        if self.possExitVectorDegree == 1:
+            #at the end of a chain, only need to check angle
+            #find out nearest neighbour's index
+            atom.GetNeighbors()[0].GetIdx()
+            self.possExitVectorNeighbor = np.array(fragConf.GetAtomPosition(atom.GetNeighbors()[0].GetIdx()))
+            
+            self.possExitVectorPlausibility = self.preprocessing.plausibilityScore(topHotspotCoords, self.possExitVectorPosition,self.possExitVectorNeighbor)
+
+        elif self.possExitVectorDegree == 2:
+            #could be aromatic..
+            n1, n2 = atom.GetNeighbors()
+            self.possExitVectorNeighbor = (np.array(fragConf.GetAtomPosition(n1.GetIdx())) + np.array(fragConf.GetAtomPosition(n2.GetIdx())))/2
+            self.possExitVectorPlausibility = self.preprocessing.plausibilityScore(topHotspotCoords, self.possExitVectorPosition,self.possExitVectorNeighbor)
+
+
+        elif self.possExitVectorDegree >= 3:
+            self.possExitVectorPlausibility = 0
+        
+        #CHANGE BACK TO 1!!!!!!!!!!!!!!!!!!!!!!!!!
+        if self.possExitVectorPlausibility == 1:
+            #run using index to specify exit vector
+            self.found_exit_vector = True
+        
+
+
+
         return self.possExitVectorIndex        
     def identifyQuasiActives(self):
         self.multiQuasiActives = {}
@@ -719,15 +928,16 @@ class STRIFE:
             self.hSingles['position'] = list(self.hSingles['position'])
             
             self.singleDistances = self.docking.assessAllDocksNoRefinement(self.elabsTestNoRefineDocks, self.hSingles, True)
-           
+            
             self.elabsTestNoRefineDocksFiltered = self.singleDistances.loc[self.singleDistances['distance'] < 3.5].drop_duplicates('smiles')
             
             if len(self.elabsTestNoRefineDocksFiltered) == 0:
                 #can't elabembeorate to this pharm
 
-
+                
                 return [0,0]
-        
+
+
         
         
         
@@ -753,18 +963,22 @@ class STRIFE:
 
                 return [0,0]
 
+
  ###########################
         #else:
         #if it satisfies the new pharm, add this to the satisfied list and check 
         #self.satisfiedHotspots = self.satisfiedHotspots.append(self.topHotspot).reset_index(drop=True)
         self.satisfiedHotspots = self.satisfiedHotspots.append(self.topHotspot)
         #put satisfied df into preprocessing friendly format
+       
+        
         distance_from_exit = []
         angle_from_exit = []
         
         for indx in self.satisfiedHotspots.index.to_list():
-            distance_from_exit.append(self.preprocessing.vectorDistance(self.satisfiedHotspots['position'][indx], self.exitVectorPos))
-            angle_from_exit.append(self.preprocessing.vectorAngle(self.satisfiedHotspots['position'][indx], self.exitVectorPos))
+            distance_from_exit.append(self.preprocessing.vectorDistance(list(self.satisfiedHotspots['position'][indx]), self.exitVectorPos))
+            
+            angle_from_exit.append(self.preprocessing.vectorAngle(list(self.satisfiedHotspots['position'][indx]), self.exitVectorPos))
         self.satisfiedHotspotsFormatted = pd.DataFrame({'type' : list(self.satisfiedHotspots['type']), 'position':list(self.satisfiedHotspots['position']), 'distFromExit':distance_from_exit, 'angFromExit' : angle_from_exit})
         self.hMulti = self.preprocessing.prepareProfiles(self.satisfiedHotspotsFormatted)
     
@@ -837,9 +1051,13 @@ class STRIFE:
 
             #filter elaborations to find quasi actives: only select mols with max distance below 4.5A
             #selfhotspotsdf_updated = self.HotspotsDF.drop(self.topHotspot.index).reset_index(drop=True)
-            selfhotspotsdf_updated = self.HotspotsDF.drop(self.topHotspot.index)
-            if len(self.mols_filt) >= 1:
-                return(self.mols_filt, selfhotspotsdf_updated)
+            if len(self.HotspotsDF) > 0:
+                
+                selfhotspotsdf_updated = self.HotspotsDF.drop(self.topHotspot.index)
+                if len(self.mols_filt) >= 1:
+                    return(self.mols_filt, selfhotspotsdf_updated)
+            else:
+                return [0,0]
 
     def refinement(self, totalNumElabs = 250, n_cores = None):
         #Use the quasi-actives to generate elaborations using the pharm model
@@ -1102,7 +1320,7 @@ if __name__=='__main__':
     output_stem = arguments.output_directory
    # for indx in [0]:
     for indx in range(len(fragments)):
-        indx = indx + 4
+        indx = indx 
 
         smi = smiles[0][indx]
         w = Chem.SDWriter(f'{output_stem}/frag.sdf')
