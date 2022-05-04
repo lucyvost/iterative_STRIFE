@@ -249,7 +249,7 @@ class STRIFE:
             #embed(header = '242')
             
         #tell it to rule out hotspots below a certain score..
-        self.HotspotsDF = self.HotspotsDF[self.HotspotsDF['score'] > 0.1]
+        self.HotspotsDF = self.HotspotsDF[self.HotspotsDF['score'] > 0.045]
         self.HotspotsDF = self.HotspotsDF.reset_index(drop=True)
 
 
@@ -408,8 +408,7 @@ class STRIFE:
                 if len(self.tempTopHotspot) != 0:
                     for indx in self.tempTopHotspot.index.to_list():
                         self.topHotspot = self.topHotspot.append(self.tempTopHotspot.loc[indx,:])
-                print('and we are going to elaborate to...')
-                print(self.topHotspot)
+
   
 
 
@@ -484,7 +483,9 @@ class STRIFE:
                         dists.append(self.preprocessing.vectorDistance(self.topHotspot['position'][indx],self.exitVectorPos) -3)
                         angs.append(self.preprocessing.vectorAngle(self.topHotspot['position'][indx],self.exitVectorPos))
                     self.origTopHotspot = self.topHotspot
-                    self.finalTopHotspot = pd.DataFrame({'distFromExit':dists, 'angFromExit':angs, 'position':list(self.topHotspot['position']), 'type':list(self.topHotspot['type'])}, index= self.topHotspot.index.to_list())
+                    self.finalTopHotspot = pd.DataFrame({'distFromExit':dists, 'angFromExit':angs, 'position':list(self.topHotspot['position']), 'type':list(self.topHotspot['type'])}, index= self.topHotspot.index.to_list()).sort_values('distFromExit')
+                    print('and we are going to elaborate to...')
+                    print(self.finalTopHotspot)                    
                     self.hSingles = self.preprocessing.prepareProfiles(self.finalTopHotspot, single = True)
                     
                     #do the actual thing
@@ -1320,8 +1321,8 @@ if __name__=='__main__':
     output_stem = arguments.output_directory
    # for indx in [0]:
     for indx in range(len(fragments)):
-        indx = indx 
-
+        indx = indx
+        print(f' ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~FRAGMENT {indx}~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~')
         smi = smiles[0][indx]
         w = Chem.SDWriter(f'{output_stem}/frag.sdf')
         w.write(fragments[indx])
