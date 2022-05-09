@@ -195,7 +195,8 @@ class docking:
                     distances.append(100) #Append really big distance
                 elif len(distanceToPharm) > 0:
                     for distance in distanceToPharm:
-                        if distance <= 3.5:
+                        #!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                        if distance <= 2:
                             test_dict[feats[distanceToPharm.index(distance)]] = distance
                     if len(test_dict) == 0:
                         #none close enough 
