@@ -247,9 +247,10 @@ class STRIFE:
                 self.HotspotsDF = self.FilteredDF
                 self.HotspotsDF = self.HotspotsDF.reset_index(drop=True)
             #embed(header = '242')
-            
+        #keep an unfiltered one for 'otw single'
+        self.unfilteredHotspotsDF = self.HotspotsDF.head(10)
         #tell it to rule out hotspots below a certain score..
-        self.HotspotsDF = self.HotspotsDF[self.HotspotsDF['score'] > 0.045]
+        self.HotspotsDF = self.HotspotsDF.head(3)
         self.HotspotsDF = self.HotspotsDF.reset_index(drop=True)
 
 
@@ -265,7 +266,7 @@ class STRIFE:
         self.satisfiedHotspots = pd.DataFrame({})
         self.fragMol3D = Chem.SDMolSupplier(args.fragment_sdf)[0]
         temp_hotspots_df = self.HotspotsDF
-        
+        temp_hotspots_df2 = self.unfilteredHotspotsDF
         #check if any hotspots are already satisfied by the fragment
         for indx2 in range(len(self.HotspotsDF)):
             distanceToPharm = []
@@ -286,10 +287,11 @@ class STRIFE:
                     self.satisfiedHotspots = self.satisfiedHotspots.append(self.HotspotsDF.iloc[[indx2]]).reset_index(drop=True)
                     
                     temp_hotspots_df = temp_hotspots_df.drop(indx2)
+                    temp_hotspots_df2 = temp_hotspots_df2.drop(indx2)
         #self.HotspotsDF = temp_hotspots_df.reset_index(drop=True)
         self.HotspotsDF = temp_hotspots_df
-
-        
+        self.unfilteredHotspotsDF = temp_hotspots_df2
+      
 
 
 
@@ -378,18 +380,19 @@ class STRIFE:
                 f.write(fragSmiles)
             fc, evI, evp, fc2 = self.preprocessing.preprocessFragment(fragSmiles, self.fragMol3D)
 
+
             if args.iter_type == 'otw' or args.iter_type == 'otw_single':
                 #got exit vector position, evp
                 #find exit vector - top hotspot
                 hotspots_to_satisfy = []
                 self.tempTopHotspot = pd.DataFrame()
-               
+                #embed()
                 exit_tophotspot = list(self.topHotspot['position'])[0] - evp
                 conf = self.fragMol3D.GetConformer()
-                for idx in self.HotspotsDF.index.tolist():
-                    secondary_hotspot = self.HotspotsDF['position'][idx]
-           
-                    if self.HotspotsDF['score'][idx] == float(self.topHotspot['score']):
+                for idx in self.unfilteredHotspotsDF.index.tolist():
+                    secondary_hotspot = self.unfilteredHotspotsDF['position'][idx]
+
+                    if float(self.unfilteredHotspotsDF['score'][idx]) == float(self.topHotspot['score']):
                         #can't have top hotspot as the secondary on the way hotspot
                         #that would be silly!
                         continue
@@ -397,21 +400,27 @@ class STRIFE:
                        
                         exit_secondary = secondary_hotspot - evp
                         print(exit_secondary)
+                        #second hotspot to exit vector
+                        dist2 = self.preprocessing.vectorDistance(secondary_hotspot, evp)
+
+                        dist1 = self.preprocessing.vectorDistance(list(self.topHotspot['position'])[0], evp)
                         angle = (self.preprocessing.vectorAngle(exit_secondary,exit_tophotspot))
-                        if angle < np.pi/4 : #possibly should be pi/6
+                        if angle < np.pi/4 and dist2 < dist1: #possibly should be pi/6
                             
                             if self.preprocessing.plausibilityScore(secondary_hotspot, self.possExitVectorPos,self.possExitVectorNeighbor) != 1:
                                 continue
                             else:
-                                self.tempTopHotspot = self.tempTopHotspot.append(self.HotspotsDF.loc[idx,:])
+                                
+                                self.tempTopHotspot = self.tempTopHotspot.append(self.unfilteredHotspotsDF.loc[idx,:])
                             #then elaborate to this and the top hotspot simultaneously
                 if len(self.tempTopHotspot) != 0:
+                    
                     for indx in self.tempTopHotspot.index.to_list():
                         self.topHotspot = self.topHotspot.append(self.tempTopHotspot.loc[indx,:])
-
+                        self.HotspotsDF = self.HotspotsDF.append(self.tempTopHotspot.loc[indx,:])
   
 
-
+            
             Chem.MolToMolFile(fc, f'{self.storeLoc}/frag_{index}.sdf')
             #Save fragment SDF
             Chem.MolToMolFile(fc, f'{self.storeLoc}/frag.sdf')
@@ -585,8 +594,12 @@ class STRIFE:
                             #embed(header = '418, didnt find any quasi actives')
                             #then the elaboration process didn't work, skip the hotspot
                             #self.HotspotsDF = self.HotspotsDF.drop(self.topHotspot.index).reset_index(drop=True)
-                            self.HotspotsDF = self.HotspotsDF.drop(self.topHotspot.index)
-                            #embed(header='585')
+                            
+                            try:
+                                self.HotspotsDF = self.HotspotsDF.drop(self.topHotspot.index)
+                            except:
+
+                                break
                             self.fragMol3D_updated = self.fragMol3D
                             self.HotspotsDF_updated = self.HotspotsDF
                            
@@ -693,7 +706,7 @@ class STRIFE:
                 self.possExitVectorPlausibility = self.preprocessing.plausibilityScore(topHotspotCoords, self.possExitVectorPos,self.possExitVectorNeighbor)
 
 
-            elif self.possExitVectorDegree >= 3:
+            elif self.possExitVectorDegree > 3:
                 self.possExitVectorPlausibility = 0
             
             #CHANGE BACK TO 1!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -1028,12 +1041,18 @@ class STRIFE:
 
             #Write the docks to file with the ligand efficiency as an attribute
 
+            #now sort docks according to LE
+            LEs = []
+            for index4 in range(len(self.mols_filt)):  
+                LEs.append(self.mols_scores[index4]/self.mols_filt[index4].GetNumHeavyAtoms())
+                self.mols_filt[index4].SetProp('STRIFE_LigEff_Score', str(self.mols_scores[index4]/self.mols_filt[index4].GetNumHeavyAtoms()))
+            finished = pd.DataFrame({'mols': self.mols_filt, 'LEs': LEs}).sort_values('LEs', ascending=False).reset_index(drop=True)
+
 
             w = Chem.SDWriter(f'{self.storeLoc}/elabsTestNoRefine_Docked_%s.sdf'%index)
-            for index in range(len(self.mols_filt)):
+            for index5 in finished.index.to_list():
                 #self.mols_filt[index]
-                self.mols_filt[index].SetProp('STRIFE_LigEff_Score', str(self.mols_scores[index]/self.mols_filt[index].GetNumHeavyAtoms()))
-                w.write(self.mols_filt[index])
+                w.write(finished['mols'][index5])
             w.close()
             #Compute ligand Efficiency
             self.elabsTestNoRefineLigEff = self.docking.ligandEfficiency(self.elabsTestNoRefineDocksFiltered['mols'], self.elabsTestNoRefineFS)
@@ -1043,20 +1062,11 @@ class STRIFE:
 
 
 
-            #Standardise the name of the final df
-            self.rankedElaborationsFinal = self.elabsTestNoRefineLigEff
-            
-            if self.writeFinalElabs:
-                self.rankedElaborationsFinal.to_csv(f'{self.storeLoc}/rankedElaborationsFinal.csv')
-            
-
-            #filter elaborations to find quasi actives: only select mols with max distance below 4.5A
-            #selfhotspotsdf_updated = self.HotspotsDF.drop(self.topHotspot.index).reset_index(drop=True)
             if len(self.HotspotsDF) > 0:
                 
                 selfhotspotsdf_updated = self.HotspotsDF.drop(self.topHotspot.index)
-                if len(self.mols_filt) >= 1:
-                    return(self.mols_filt, selfhotspotsdf_updated)
+                if len(finished['mols'].to_list()) >= 1:
+                    return(finished['mols'].to_list(), selfhotspotsdf_updated)
             else:
                 return [0,0]
 
@@ -1311,6 +1321,8 @@ if __name__=='__main__':
             help='Number of CPU cores to use for docking and other computations. Specifiying -1 will use all available cores')
     parser.add_argument('--iter_type', '-it', type=str,default = 'score')
     parser.add_argument('--cluster', type=str,default = False)
+
+    parser.add_argument('--beam_search', type=str,default = False)
     #TODO
     #parser.add_argument('--compute_hotspot_distance', action = "store_true",
             #help='Optional flag which will compute the distance of ligand pharmacophores to the nearest pharmacophoric point and save as a molecule property')
@@ -1321,7 +1333,7 @@ if __name__=='__main__':
     output_stem = arguments.output_directory
    # for indx in [0]:
     for indx in range(len(fragments)):
-        indx = indx
+        indx = indx 
         print(f' ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~FRAGMENT {indx}~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~')
         smi = smiles[0][indx]
         w = Chem.SDWriter(f'{output_stem}/frag.sdf')

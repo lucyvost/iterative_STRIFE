@@ -196,7 +196,7 @@ class docking:
                 elif len(distanceToPharm) > 0:
                     for distance in distanceToPharm:
                         #!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-                        if distance <= 2:
+                        if distance <= 3.5:
                             test_dict[feats[distanceToPharm.index(distance)]] = distance
                     if len(test_dict) == 0:
                         #none close enough 
