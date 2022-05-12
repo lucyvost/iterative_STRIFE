@@ -284,6 +284,7 @@ class STRIFE:
             
     
     def run(self, args):
+        embed()
         self.satisfiedHotspots = pd.DataFrame({})
         self.fragMol3D = Chem.SDMolSupplier(args.fragment_sdf)[0]
         temp_hotspots_df = self.HotspotsDF
@@ -299,9 +300,10 @@ class STRIFE:
                     pharmPosition = np.array(self.fragMol3D.GetConformer().GetAtomPosition(feat.GetAtomIds()[0]))
                     distanceToPharm.append(self.preprocessing.vectorDistance(pharmPosition, self.HotspotsDF['position'][indx2]))
             if len(distanceToPharm) != 0:
+                
 
-
-                if np.min(distanceToPharm) < 3.5:
+                if np.min(distanceToPharm) < args.dist:
+                    
                     #then constraint is already satisfied
                     #add constraint to list of hotspots that should be satisfied
 
@@ -912,7 +914,7 @@ class STRIFE:
         return self.possExitVectorIndex        
     def identifyQuasiActives(self):
         self.multiQuasiActives = {}
-        self.multiQuasiActives = self.multiDistances.loc[self.multiDistances['distance'] < 3.5].drop_duplicates('smiles').head(5)
+        self.multiQuasiActives = self.multiDistances.loc[self.multiDistances['distance'] < args.dist].drop_duplicates('smiles').head(5)
 
     def elaborationsWithoutRefinement(self, counts = True, totalNumElabs = 250, numElabsPerPoint = 250, n_cores = None,index=0, single=True):
         
@@ -962,9 +964,9 @@ class STRIFE:
             self.elabsTestNoRefineDocks, self.elabsTestNoRefineFS = self.docking.dockLigandsMP(self.elabsTestNoRefineFName, self.constraintFile, self.cavityLigandFile, self.protein, returnFitnessScore = True, n_processes = self.num_cpu_cores)
             self.hSingles['position'] = list(self.hSingles['position'])
             
-            self.singleDistances = self.docking.assessAllDocksNoRefinement(self.elabsTestNoRefineDocks, self.hSingles, True)
+            self.singleDistances = self.docking.assessAllDocksNoRefinement(self.elabsTestNoRefineDocks, self.hSingles, args.dist, True)
             
-            self.elabsTestNoRefineDocksFiltered = self.singleDistances.loc[self.singleDistances['distance'] < 3.5].drop_duplicates('smiles')
+            self.elabsTestNoRefineDocksFiltered = self.singleDistances.loc[self.singleDistances['distance'] < args.dist].drop_duplicates('smiles')
             
             if len(self.elabsTestNoRefineDocksFiltered) == 0:
                 #can't elabembeorate to this pharm
@@ -990,9 +992,9 @@ class STRIFE:
             self.multiDocks, self.elabsTestNoRefineFS = self.docking.dockLigandsMP(self.multiElabs.dockingFname, self.constraintFile, self.cavityLigandFile, self.protein, returnFitnessScore = True, n_processes = n_cores) #Dock in parallel
             
             #Compute distance to pharmacophoric point
-            self.multiDistances = self.docking.assessAllDocksNoRefinement(self.multiDocks, self.hMulti, single = False)
+            self.multiDistances = self.docking.assessAllDocksNoRefinement(self.multiDocks, self.hMulti, args.dist, single = False)
             
-            self.elabsTestNoRefineDocksFiltered = self.multiDistances.loc[self.multiDistances['distance'] < 3.5].drop_duplicates('smiles')
+            self.elabsTestNoRefineDocksFiltered = self.multiDistances.loc[self.multiDistances['distance'] < args.dist].drop_duplicates('smiles')
             if len(self.elabsTestNoRefineDocksFiltered) == 0:
                 #can't elaborate to this pharm
 
@@ -1017,9 +1019,9 @@ class STRIFE:
         self.satisfiedHotspotsFormatted = pd.DataFrame({'type' : list(self.satisfiedHotspots['type']), 'position':list(self.satisfiedHotspots['position']), 'distFromExit':distance_from_exit, 'angFromExit' : angle_from_exit})
         self.hMulti = self.preprocessing.prepareProfiles(self.satisfiedHotspotsFormatted)
     
-        self.multiDistances = self.docking.assessAllDocksNoRefinement(self.elabsTestNoRefineDocksFiltered['mols'], self.hMulti, single=False)
+        self.multiDistances = self.docking.assessAllDocksNoRefinement(self.elabsTestNoRefineDocksFiltered['mols'], self.hMulti,args.dist, single=False)
         
-        self.elabsTestNoRefineDocksFiltered =self.multiDistances.loc[self.multiDistances['distance'] < 3.5].drop_duplicates('smiles').reset_index(drop=True)
+        self.elabsTestNoRefineDocksFiltered =self.multiDistances.loc[self.multiDistances['distance'] < args.dist].drop_duplicates('smiles').reset_index(drop=True)
         #check again that this isn't empty
         if len(self.elabsTestNoRefineDocksFiltered) == 0:
             #can't elaborate to this pharm
@@ -1342,7 +1344,7 @@ if __name__=='__main__':
             help='Number of CPU cores to use for docking and other computations. Specifiying -1 will use all available cores')
     parser.add_argument('--iter_type', '-it', type=str,default = 'score')
     parser.add_argument('--cluster', type=str,default = False)
-
+    parser.add_argument('--dist', type = float, default = 3.5)
     parser.add_argument('--beam_search', type=str,default = False)
     #TODO
     #parser.add_argument('--compute_hotspot_distance', action = "store_true",

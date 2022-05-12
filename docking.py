@@ -102,14 +102,14 @@ class docking:
         distanceDF = pd.DataFrame({'smiles':smiles,'mols':mols, 'distance':dist}).sort_values('distance', ascending = True)
         return distanceDF
 
-    def assessAllDocksNoRefinement(self, mols, hotspot, single = True):
+    def assessAllDocksNoRefinement(self, mols, hotspot,dist_cutoff, single = True):
         smiles = []
         dist = []
        
         for m in mols:
             smiles.append(Chem.MolToSmiles(m))
             
-            dist.append(self.NEWassessSingleDock(m, hotspot, single))
+            dist.append(self.NEWassessSingleDock(m, hotspot,dist_cutoff, single))
 
         
         distanceDF = pd.DataFrame({'smiles':smiles, 'mols': mols,'distance':dist}).sort_values('distance', ascending = True)
@@ -154,7 +154,7 @@ class docking:
             print(distances)
             return max(distances) #Return the maximum of the distances to the hotspot centres
 
-    def NEWassessSingleDock(self, mol, hotspot, single = True):
+    def NEWassessSingleDock(self, mol, hotspot,dist_cutoff, single = True ):
         #Compute the distance between the pharmacophores in a mol and the corresponding hotspot
         
 
@@ -196,7 +196,7 @@ class docking:
                 elif len(distanceToPharm) > 0:
                     for distance in distanceToPharm:
                         #!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-                        if distance <= 3.5:
+                        if distance <= dist_cutoff:
                             test_dict[feats[distanceToPharm.index(distance)]] = distance
                     if len(test_dict) == 0:
                         #none close enough 
