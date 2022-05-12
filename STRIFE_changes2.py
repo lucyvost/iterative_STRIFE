@@ -69,6 +69,27 @@ factory = ChemicalFeatures.BuildFeatureFactory(fdefName)
 from preprocessing import preprocessing
 from hotspots.hs_io import HotspotReader
 
+for line in open('/proc/self/status'):
+    if 'Cpu' in line:
+        print(line)
+        print('before os line')
+os.system("taskset -p 0xff %d" % os.getpid())
+for line in open('/proc/self/status'):
+    if 'Cpu' in line:
+        print('after os line')
+        print(line)
+
+import psutil
+p = psutil.Process()
+all_cpus = list(range(psutil.cpu_count()))
+p.cpu_affinity(all_cpus)
+
+
+for line in open('/proc/self/status'):
+    if 'Cpu' in line:
+        print(line)
+        print('after setting affinity to all')
+print('!!!!!!!!!!!!!!!!!')
 
 
 
